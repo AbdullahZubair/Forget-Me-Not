@@ -1,0 +1,212 @@
+<?php
+
+/**
+ * @file
+ * ForgetMeNot: A module to exclude selected modules from update checks.
+ * 
+ * This module allows site admins to manage a list of modules that should be
+ * excluded from update checks. It provides an interface for adding and
+ * removing modules from the exclusion list.
+ */
+
+/**
+ * Implements hook_menu().
+ * 
+ * Defines routes for managing excluded modules and performing AJAX operations.
+ */
+function forget_me_not_menu() {
+  $items = array();
+
+  // Main page to manage excluded modules.
+  $items['admin/config/system/forget_me_not'] = array(
+    'title' => 'Manage Excluded Modules',
+    'description' => 'Manage modules excluded from update checks.',
+    'page callback' => 'forget_me_not_manage_excluded_modules_page',
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  // Route for the "Select Modules to Exclude" page.
+  $items['admin/config/system/forget_me_not/select_modules'] = array(
+    'title' => 'Select Modules to Exclude',
+    'description' => 'Select enabled modules to exclude from update checks.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('forget_me_not_select_modules_form'),
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  // Route to handle module removal via AJAX.
+  $items['admin/config/system/forget_me_not/remove_module'] = array(
+    'page callback' => 'forget_me_not_remove_module_callback',
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Helper function to get the list of excluded modules.
+ */
+function forget_me_not_get_excluded_modules() {
+  return variable_get('forget_me_not_excluded_modules', array());
+}
+
+/**
+ * Helper function to save the list of excluded modules.
+ */
+function forget_me_not_save_excluded_modules($modules) {
+  variable_set('forget_me_not_excluded_modules', $modules);
+}
+
+/**
+ * Page callback for displaying and managing excluded modules.
+ * 
+ * Displays all excluded modules with the option to remove them and provides
+ * a button to add new modules to the exclusion list.
+ */
+function forget_me_not_manage_excluded_modules_page() {
+  $output = '';
+
+  // Add the "Add" button to open the dedicated page.
+  $output .= '<button id="add-modules-button">' . t('Add Modules to Exclude') . '</button>';
+
+  // Get the list of currently excluded modules.
+  $excluded_modules = forget_me_not_get_excluded_modules();
+
+  // If there are excluded modules, display them with remove buttons.
+  if (!empty($excluded_modules)) {
+    $output .= '<h2>' . t('Excluded Modules') . '</h2>';
+    $output .= '<ul id="excluded-modules-list">';
+    foreach ($excluded_modules as $module) {
+      $output .= '<li id="module-' . check_plain($module) . '">' . check_plain($module) .
+        ' <button class="remove-module" data-module="' . check_plain($module) . '">' . t('Remove') . '</button></li>';
+    }
+    $output .= '</ul>';
+  }
+  else {
+    // If no modules are excluded, display a message.
+    $output .= '<p>' . t('No modules have been excluded yet.') . '</p>';
+  }
+
+  // Attach JavaScript for handling dynamic updates (removal and page opening).
+  drupal_add_js(drupal_get_path('module', 'forget_me_not') . '/js/forget_me_not.js');
+
+  return $output;
+}
+
+/**
+ * AJAX callback to remove a module from the exclusion list.
+ */
+function forget_me_not_remove_module_callback() {
+  // Use drupal_validate_utf8() to validate the input.
+  $module = check_plain(drupal_validate_utf8($_POST['module']) ? $_POST['module'] : '');
+
+  // Get the list of excluded modules.
+  $excluded_modules = forget_me_not_get_excluded_modules();
+
+  // Remove the selected module from the exclusion list.
+  if (($key = array_search($module, $excluded_modules)) !== FALSE) {
+    unset($excluded_modules[$key]);
+    forget_me_not_save_excluded_modules($excluded_modules);
+
+    // Respond with success status.
+    drupal_json_output(array('status' => 'success'));
+  }
+  else {
+    // Respond with error if the module wasn't found.
+    drupal_json_output(array('status' => 'error'));
+  }
+
+  drupal_exit();
+}
+
+/**
+ * Implements hook_form().
+ * 
+ * Provides a form to allow users to select enabled modules to exclude.
+ */
+function forget_me_not_select_modules_form($form, &$form_state) {
+  // Get the list of all currently excluded modules.
+  $excluded_modules = forget_me_not_get_excluded_modules();
+
+  // Get the list of all enabled modules.
+  $enabled_modules = array_filter(module_list(TRUE), function($module) {
+    return module_exists($module);
+  });
+
+  // Build the checkboxes for the enabled modules.
+  $form['forget_me_not_enabled_modules'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('Enabled Modules'),
+    '#description' => t('Select which enabled modules to exclude from update checks. Already excluded modules are hidden.'),
+    '#options' => array(),
+  );
+
+  // Add each enabled module to the checkboxes, skipping already excluded ones.
+  foreach ($enabled_modules as $module => $info) {
+    if (!in_array($module, $excluded_modules)) {
+      $form['forget_me_not_enabled_modules']['#options'][$module] = $module;
+    }
+  }
+
+  // Add a submit button to save the selected modules for exclusion.
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Exclude Selected Modules'),
+  );
+
+  return $form;
+}
+
+/**
+ * Submit handler for the enabled modules form.
+ * 
+ * Adds the selected modules to the exclusion list.
+ */
+function forget_me_not_select_modules_form_submit($form, &$form_state) {
+  // Get the currently excluded modules.
+  $excluded_modules = forget_me_not_get_excluded_modules();
+
+  // Get the modules selected by the user to exclude.
+  $selected_modules = array_filter($form_state['values']['forget_me_not_enabled_modules']);
+
+  // Merge the selected modules with the already excluded ones.
+  $excluded_modules = array_unique(array_merge($excluded_modules, array_keys($selected_modules)));
+
+  // Update the variable to save the excluded modules.
+  forget_me_not_save_excluded_modules($excluded_modules);
+
+  // Redirect back to the main page with a success message.
+  drupal_set_message(t('The selected modules have been excluded from update checks.'));
+  drupal_goto('admin/config/system/forget_me_not');
+}
+
+/**
+ * Implements hook_update_status_alter().
+ * 
+ * Alters the module update status to exclude selected modules from update checks.
+ */
+function forget_me_not_update_status_alter(&$projects) {
+  // Get the list of excluded modules.
+  $excluded_modules = forget_me_not_get_excluded_modules();
+
+  // Loop through the projects and unset any excluded modules from the update checks.
+  foreach ($excluded_modules as $module) {
+    if (isset($projects[$module])) {
+      unset($projects[$module]);
+    }
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ * 
+ * Cleans up variables and settings when the module is uninstalled.
+ */
+function forget_me_not_uninstall() {
+  // Delete the variable that stores excluded modules when the module is uninstalled.
+  variable_del('forget_me_not_excluded_modules');
+}
+

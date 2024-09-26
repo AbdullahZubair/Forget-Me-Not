@@ -1,0 +1,7 @@
+name = ForgetMeNot
+description = "A module that excludes unsupported modules from update checks, because why bother?"
+core = 7.x
+package = Custom
+version = "7.x-1.0.0"
+dependencies[] = update
+configure = admin/config/system/forget_me_not
