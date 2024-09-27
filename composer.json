@@ -1,0 +1,16 @@
+{
+  "name": "abdullahzubair/forget-me-not",
+  "type": "drupal-module",
+  "description": "ForgetMeNot - A module to exclude selected modules from update checks.",
+  "homepage": "https://github.com/abdullahzubair/forget-me-not",
+  "license": "GPL-2.0+",
+  "support": {
+    "issues": "https://github.com/abdullahzubair/forget-me-not/issues"
+  },
+  "require": {
+    "composer/installers": "^1.0.0"
+  },
+  "extra": {
+    "installer-name": "forget_me_not"
+  }
+}
